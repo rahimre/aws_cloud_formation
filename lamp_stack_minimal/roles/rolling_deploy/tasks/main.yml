@@ -1,0 +1,8 @@
+---
+- name: clean existing website content                             
+  file: path=/usr/share/nginx/html/ state=absent                   
+                                                                     
+- name: deploy website content                                     
+  git: repo={{ giturl }}                                           
+       dest=/usr/share/nginx/html/
+       version={{ app_version }}   

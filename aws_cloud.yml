@@ -1,0 +1,221 @@
+- name: create a new aws cloud
+  hosts: localhost
+  connection: local
+  gather_facts: False
+  vars:
+    region: us-east-1
+    az: us-east-1b
+    instance_type: t2.micro
+    lbcount: 1 
+    appcount: 2 
+    env: staging
+    project: bobo
+    natami: ami-224dc94a
+    sshKey: sshKey
+    subnet_public: 10.0.0.0/24
+    subnet_private: 10.0.1.0/24
+    device_type: gp2
+    volume_size: 10
+
+  tasks:
+  - name: create a vpc
+    local_action:
+      module: ec2_vpc
+      region: "{{ region }}"
+      internet_gateway: True
+      resource_tags: { Name: "{{ project }}", env: "{{ env }}" }
+      cidr_block: 10.0.0.0/16
+      subnets:
+        - cidr: "{{ subnet_public }}"
+          az: "{{ az }}"
+          resource_tags:
+            env: "{{ env }}"
+            tier: web
+            Name: "{{ env }}_subnet_public"
+        - cidr: "{{ subnet_private }}"
+          az: "{{ az }}"
+          resource_tags:
+            env: "{{ env }}"
+            tier: db
+            Name: "{{ env }}_subnet_private"
+      route_tables:
+        - subnets:
+          - "{{ subnet_public }}"
+          routes:
+          - dest: 0.0.0.0/0
+            gw: igw
+    register: vpc
+
+  - set_fact: vpc_id={{ vpc.vpc_id }}
+
+  - name: create sshKey
+    ec2_key: name="{{ sshKey }}" region="{{ region }}"
+    register: keypair
+
+  - name: write the key to a file
+    copy:
+      dest: pemfiles/sshKey.pem
+      content: "{{ keypair.key.private_key }}"
+      mode: 0600
+    when: keypair.changed
+
+  - name: NAT security group
+    local_action:
+      module: ec2_group
+      name: nat
+      description: allow http and https access
+      region: "{{ region }}"
+      vpc_id: "{{ vpc_id }}"
+      rules:
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          cidr_ip: "{{ subnet_private }}"
+        - proto: tcp
+          from_port: 443
+          to_port: 443
+          cidr_ip: "{{ subnet_private }}"
+      rules_egress:
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          cidr_ip: 0.0.0.0/0
+        - proto: tcp
+          from_port: 443
+          to_port: 443
+          cidr_ip: 0.0.0.0/0
+  - name: web security group
+    local_action:
+      module: ec2_group
+      name: web
+      description: allow http and https access
+      region: "{{ region }}"
+      vpc_id: "{{ vpc_id }}"
+      rules:
+        - proto: tcp
+          from_port: 80
+          to_port: 80
+          cidr_ip: 0.0.0.0/0
+        - proto: tcp
+          from_port: 443
+          to_port: 443
+          cidr_ip: 0.0.0.0/0
+        - proto: tcp
+          from_port: 444
+          to_port: 444
+          cidr_ip: 0.0.0.0/0
+  - name: ssh security group
+    local_action:
+      module: ec2_group
+      name: ssh
+      description: allow ssh access
+      region: "{{ region }}"
+      vpc_id: "{{ vpc_id }}"
+      rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: 0.0.0.0/0
+  - name: openvpn security group
+    local_action:
+      module: ec2_group
+      name: ssh
+      description: allow ssh access
+      region: "{{ region }}"
+      vpc_id: "{{ vpc_id }}"
+      rules:
+        - proto: tcp
+          from_port: 22
+          to_port: 22
+          cidr_ip: 0.0.0.0/0
+  - name: inbound security group
+    local_action:
+      module: ec2_group
+      name: inbound
+      description: allow outbound connections to the internet
+      region: "{{ region }}"
+      vpc_id: "{{ vpc_id }}"
+      rules:
+        - proto: all
+          cidr_ip: 0.0.0.0/0
+  - name: outbound security group
+    local_action:
+      module: ec2_group
+      name: outbound
+      description: allow outbound connections to the internet
+      region: "{{ region }}"
+      vpc_id: "{{ vpc_id }}"
+      rules_egress:
+        - proto: all
+          cidr_ip: 0.0.0.0/0
+  - name: Get the ubuntu trusty AMI
+    ec2_ami_search: distro=ubuntu release=trusty virt=hvm region={{ region }}
+    register: ubuntu_image
+  
+  - name: start the mgmt instances in public subnet
+    local_action:
+      module: ec2
+      region: "{{ region }}"
+      image: "{{ ubuntu_image.ami }}"
+      instance_type: "{{ instance_type }}"
+      key_name: "{{ sshKey }}"
+      group: [inbound, outbound]
+      instance_tags: { Name: mgmtServer, type: mgmt, env: "{{ env }}" }
+      exact_count: 1
+      count_tag: { type: mgmt }
+      assign_public_ip: "true"
+      vpc_subnet_id: "{{ vpc.subnets[0].id}}"
+      wait: yes
+    register: ec2
+
+  - name: start the lb instances in public subnet
+    local_action:
+      module: ec2
+      region: "{{ region }}"
+      image: "{{ ubuntu_image.ami }}"
+      instance_type: "{{ instance_type }}"
+      key_name: "{{ sshKey }}"
+      group: [web, ssh, outbound]
+      instance_tags: { Name: lbServer, type: lb, env: "{{ env }}" }
+      exact_count: "{{ lbcount }}"
+      count_tag: { type: lb }
+      assign_public_ip: "true"
+      vpc_subnet_id: "{{ vpc.subnets[0].id}}"
+      wait: yes
+    register: ec2
+
+  - name: start the app instances in private subnet
+    local_action:
+      module: ec2
+      region: "{{ region }}"
+      image: "{{ ubuntu_image.ami }}"
+      instance_type: "{{ instance_type }}"
+      key_name: "{{ sshKey }}"
+      group: [web, ssh, outbound]
+      instance_tags: { Name: appServer, type: app, env: "{{ env }}" }
+      exact_count: "{{ appcount }}"
+      count_tag: { type: app }
+      vpc_subnet_id: "{{ vpc.subnets[1].id}}"
+      volumes:
+          - device_name: /dev/sda1
+            device_type: "{{ device_type }}"
+            volume_size: "{{ volume_size }}"
+            delete_on_termination: true
+      wait: yes
+  - name: start the instances NAT
+    local_action:
+      module: ec2
+      region: "{{ region }}"
+      image: "{{ natami }}"
+      instance_type: t1.micro
+      key_name: "{{ sshKey }}"
+      group: [nat]
+      instance_tags: { Name: natServer, type: nat, env: "{{ env }}" }
+      exact_count: 1
+      count_tag: { type: nat }
+      vpc_subnet_id: "{{ vpc.subnets[0].id}}"
+      assign_public_ip: "true"
+      source_dest_check: no
+      wait: yes
+   # add a route to the private subnet's route table 
+   # Dest : 0.0.0.0/0 target: Nat Instance ID 

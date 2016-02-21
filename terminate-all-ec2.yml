@@ -1,0 +1,20 @@
+# Delete's AWS images
+# this post has way to get images. 
+# call with: ansible-playbook terminate-ec2.yml
+# requires that you have boto installed and a ~/.boto file installed.
+# the .boto file should have the following env variables: 
+# aws_access_key_id = ABCD...
+# aws_secret_access_key = ZYXWVUTSR..
+
+- hosts: localhost
+  gather_facts: True
+  connection: local
+  vars: 
+    - region: 'us-east-1'
+  tasks:
+    - name: Gather EC2 facts
+      local_action: ec2_facts
+
+    - debug: var=hostvars[inventory_hostname]
+    - debug: msg="{{ hostvars[inventory_hostname]['ec2_id'] }}"
+

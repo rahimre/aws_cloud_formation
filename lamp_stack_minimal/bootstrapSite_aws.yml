@@ -1,0 +1,20 @@
+---
+
+# install nginx on app machines
+- hosts: tag_Name_appServer
+  become: yes
+
+  roles:
+   - common
+   - app
+
+# lb
+- hosts: tag_Name_lbServer
+  become: yes
+  vars:
+   hapassword: admin
+   haproxyapp: lampapp
+
+  roles:
+   - common
+   - lb

@@ -1,0 +1,5 @@
+---
+- name: enable server in haproxy
+   shell: echo "enable server {{ haproxyapp }}/{{ inventory_hostname }}" | socat stdio /var/lib/haproxy/stats
+   delegate_to: "{{ item }}"
+   with_items: groups.lb

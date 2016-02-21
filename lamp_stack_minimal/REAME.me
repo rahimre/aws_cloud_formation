@@ -1,0 +1,6 @@
+
+cd aws_cloud_formation/lamp_stack_minimal/
+
+ansible-playbook -i ec2.py bootstrapSite_aws.yml
+
+curl awsdns:444 -k -key --key roles/lb/files/myclientname.key --cert roles/lb/files/myclientname.crt

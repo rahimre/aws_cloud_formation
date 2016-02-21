@@ -1,0 +1,4 @@
+---
+#usage : ansible-playbook init_cloud.yml -i ec2.py -u ubuntu
+- include: aws_cloud.yml
+- include: initialize_mgmt.yml

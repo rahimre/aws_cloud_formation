@@ -1,0 +1,13 @@
+---
+
+# rolling_deploy
+- hosts: tag_Name_appServer
+  sudo: yes
+  serial: 1
+  vars:
+   haproxyapp: lampapp
+   giturl: https://github.com/rahimre/SampleWebSite
+   app_version: release-0.01
+
+  roles:
+   - rolling_deploy

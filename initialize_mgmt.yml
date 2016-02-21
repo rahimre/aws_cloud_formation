@@ -1,0 +1,25 @@
+---
+- hosts: tag_Name_mgmtServer
+  sudo: yes
+  gather_facts: no
+
+  tasks:
+  
+  - name: install git
+    apt: name=git state=installed update_cache=yes
+
+  - name: install software-properties-common
+    apt: name=software-properties-common  state=installed update_cache=yes
+
+  - name: add apt_repository
+    apt_repository: repo='ppa:ansible/ansible' state=present
+
+  - name: install ansible
+    apt: name=ansible state=installed update_cache=yes
+
+  - name: install boto
+    apt: name=python-boto state=installed update_cache=yes
+
+  - name: copy sshconfig 
+    copy: src=sshConfig dest=~ubuntu/.ssh/config
+  
